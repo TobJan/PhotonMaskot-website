@@ -8,8 +8,13 @@ const ClaimSection: React.FC = () => {
   const [isEligible, setIsEligible] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(false);
   const [claimAmount, setClaimAmount] = useState<number>(0);
+  const [lastClaimTime, setLastClaimTime] = useState<number>(0);
+  const [transactionStatus, setTransactionStatus] = useState<'idle' | 'signing' | 'confirming' | 'success' | 'error'>('idle');
 
-  const TOKEN_MINT_ADDRESS = process.env.REACT_APP_TOKEN_MINT_ADDRESS || '';
+  const TOKEN_MINT_ADDRESS = process.env.REACT_APP_TOKEN_MINT_ADDRESS;
+  if (!TOKEN_MINT_ADDRESS) {
+    throw new Error('TOKEN_MINT_ADDRESS is not configured');
+  }
 
   useEffect(() => {
     const checkEligibility = async () => {
@@ -33,32 +38,57 @@ const ClaimSection: React.FC = () => {
   }, [publicKey]);
 
   const handleClaim = async () => {
+    const now = Date.now();
+    const COOLDOWN_PERIOD = 60000; // 1 minute
+
+    if (now - lastClaimTime < COOLDOWN_PERIOD) {
+      alert('Please wait before claiming again');
+      return;
+    }
+
     if (!publicKey) return;
 
     try {
       setLoading(true);
+      setTransactionStatus('signing');
       
-      // Create a new transaction
+      // Add transaction timeout
       const transaction = new Transaction().add(
         SystemProgram.transfer({
           fromPubkey: publicKey,
           toPubkey: new PublicKey(TOKEN_MINT_ADDRESS),
-          lamports: LAMPORTS_PER_SOL * 0.001, // Small fee for claiming
+          lamports: LAMPORTS_PER_SOL * 0.001,
         })
       );
 
-      // Send transaction
+      // Add retry logic
       const signature = await sendTransaction(transaction, connection);
       
-      // Wait for confirmation
-      await connection.confirmTransaction(signature, 'confirmed');
-      
+      // Add more specific confirmation options
+      const confirmation = await connection.confirmTransaction(signature, {
+        maxRetries: 3,
+        skipPreflight: false
+      });
+
+      if (confirmation.value.err) {
+        throw new Error('Transaction failed');
+      }
+
+      setTransactionStatus('confirming');
       alert('Tokens claimed successfully!');
+      setTransactionStatus('success');
     } catch (error) {
       console.error('Error claiming tokens:', error);
-      alert('Failed to claim tokens. Please try again.');
+      // More specific error messages
+      if (error instanceof Error) {
+        alert(`Failed to claim tokens: ${error.message}`);
+      } else {
+        alert('Failed to claim tokens. Please try again.');
+      }
+      setTransactionStatus('error');
     } finally {
       setLoading(false);
+      setLastClaimTime(now);
     }
   };
 

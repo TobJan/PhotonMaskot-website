@@ -20,7 +20,15 @@ require('@solana/wallet-adapter-react-ui/styles.css');
 
 function App() {
   const network = (process.env.REACT_APP_SOLANA_NETWORK as WalletAdapterNetwork) || WalletAdapterNetwork.Devnet;
-  const endpoint = useMemo(() => clusterApiUrl(network), [network]);
+  if (process.env.NODE_ENV === 'production' && network !== WalletAdapterNetwork.Mainnet) {
+    console.warn('Warning: Not running on mainnet');
+  }
+
+  const commitment = 'confirmed';
+  const endpoint = useMemo(() => ({
+    endpoint: clusterApiUrl(network),
+    commitment
+  }), [network]);
 
   const wallets = useMemo(
     () => [
